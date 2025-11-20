@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recognizant Forensics - Environmental Deepfake Detection</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Recognizant Forensics</h1>
+        <p>Environmental Deepfake Detection - Analyzing what others ignore</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <input type="file" id="videoFile" accept="video/*" style="display: none;">
+            <h3>Drop video here or click to upload</h3>
+            <p>We analyze environmental inconsistencies, not faces</p>
+        </div>
+        
+        <div class="analyzing" id="analyzing">
+            <div class="spinner"></div>
+            <h3>Analyzing Environmental Signatures...</h3>
+            <p id="statusText">Extracting audio acoustics...</p>
+        </div>
+        
+        <div class="results" id="results">
+            <h2>Analysis Complete</h2>
+            <div class="verdict" id="verdict"></div>
+            <div id="findings"></div>
+            <div id="technicalDetails"></div>
+            <div class="button-group">
+                <button class="upload-new-button" id="uploadNewButton" onclick="uploadNewVideo()">Upload New Video</button>
+                <button class="clear-button" id="clearButton" onclick="clearAnalysis()">Clear Analysis</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('videoFile');
+        const analyzing = document.getElementById('analyzing');
+        const results = document.getElementById('results');
+        const statusText = document.getElementById('statusText');
+        
+        uploadArea.onclick = () => fileInput.click();
+        
+        uploadArea.ondrop = (e) => {
+            e.preventDefault();
+            handleFile(e.dataTransfer.files[0]);
+        };
+        
+        uploadArea.ondragover = (e) => e.preventDefault();
+        
+        fileInput.onchange = (e) => handleFile(e.target.files[0]);
+        
+        async function handleFile(file) {
+            if (!file || !file.type.startsWith('video/')) {
+                alert('Please upload a video file');
+                return;
+            }
+            
+            uploadArea.style.display = 'none';
+            analyzing.style.display = 'block';
+            results.style.display = 'none';
+            
+            // Progress updates
+            setTimeout(() => statusText.textContent = 'Analyzing shadow consistency...', 2000);
+            setTimeout(() => statusText.textContent = 'Checking reflection anomalies...', 4000);
+            setTimeout(() => statusText.textContent = 'Calculating confidence scores...', 6000);
+            
+            const formData = new FormData();
+            formData.append('video', file);
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                showResults(data);
+            } catch (error) {
+                alert('Analysis failed: ' + error.message);
+                analyzing.style.display = 'none';
+                uploadArea.style.display = 'block';
+            }
+        }
+        
+        function showResults(data) {
+            analyzing.style.display = 'none';
+            results.style.display = 'block';
+            
+            const verdict = document.getElementById('verdict');
+            const analysis = data.analysis;
+            verdict.textContent = `${analysis.verdict} (${analysis.score}% authentic)`;
+            verdict.className = 'verdict ' + 
+                (analysis.score >= 80 ? 'authentic' : 
+                 analysis.score >= 50 ? 'suspicious' : 'fake');
+            
+            const findings = document.getElementById('findings');
+            if (analysis.key_indicators && analysis.key_indicators.length > 0) {
+                findings.innerHTML = '<h3>Key Findings:</h3>' + 
+                    analysis.key_indicators.map(f => 
+                        `<div class="finding">⚠️ ${f}</div>`
+                    ).join('');
+            } else {
+                findings.innerHTML = '<h3>Key Findings:</h3><div class="finding">No anomalies detected</div>';
+            }
+            
+            const technicalDetails = document.getElementById('technicalDetails');
+            if (analysis.technical_details) {
+                technicalDetails.innerHTML = '<h3>Technical Details:</h3>' +
+                    `<div class="finding">Audio Reverb Coefficient: ${analysis.technical_details.audio_reverb.toFixed(2)}</div>` +
+                    `<div class="finding">Shadow Variance: ${analysis.technical_details.shadow_variance.toFixed(4)}</div>`;
+            }
+        }
+        
+        function uploadNewVideo() {
+            // Trigger file input to open
+            fileInput.click();
+        }
+        
+        function clearAnalysis() {
+            // Hide results
+            results.style.display = 'none';
+            
+            // Show upload area
+            uploadArea.style.display = 'block';
+            
+            // Reset file input
+            fileInput.value = '';
+            
+            // Clear any displayed content
+            document.getElementById('verdict').textContent = '';
+            document.getElementById('verdict').className = 'verdict';
+            document.getElementById('findings').innerHTML = '';
+            document.getElementById('technicalDetails').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+
