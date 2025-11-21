@@ -3,15 +3,39 @@ import tempfile
 import os
 from analyzer import audio_checker, visual_checker, scorer
 
-# Optional GCP imports - will work without them for local testing
+# Initialize GCP Firestore with proper credential handling
+db = None
+HAS_FIRESTORE = False
+
 try:
     from google.cloud import firestore
-    db = firestore.Client()
-    HAS_FIRESTORE = True
-except Exception:
-    db = None
-    HAS_FIRESTORE = False
-    print("Warning: Firestore not available. Results won't be stored in database.")
+    from google.auth import default
+    from google.auth.exceptions import DefaultCredentialsError
+    
+    # Try to get credentials
+    try:
+        credentials, project = default()
+        db = firestore.Client(credentials=credentials, project=project)
+        HAS_FIRESTORE = True
+        print("✓ Firestore initialized successfully")
+    except DefaultCredentialsError:
+        # Check if credentials file is specified
+        creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        if creds_path and os.path.exists(creds_path):
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+            db = firestore.Client()
+            HAS_FIRESTORE = True
+            print("✓ Firestore initialized with credentials file")
+        else:
+            print("⚠ Warning: Firestore credentials not found.")
+            print("  Set GOOGLE_APPLICATION_CREDENTIALS environment variable or")
+            print("  ensure you're running on GCP with default credentials.")
+            print("  Results won't be stored in database.")
+except ImportError:
+    print("⚠ Warning: google-cloud-firestore not installed. Install with: pip install google-cloud-firestore")
+except Exception as e:
+    print(f"⚠ Warning: Could not initialize Firestore: {e}")
+    print("  Results won't be stored in database.")
 
 app = Flask(__name__, static_folder='static')
 

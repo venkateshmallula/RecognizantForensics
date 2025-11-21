@@ -12,6 +12,10 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}🚀 Recognizant Forensics - Cloud Run Deployment${NC}"
 echo ""
+echo -e "${YELLOW}ℹ️  Note: Cloud Run automatically uses default service account credentials.${NC}"
+echo -e "${YELLOW}   No need to set GOOGLE_APPLICATION_CREDENTIALS for deployment.${NC}"
+echo -e "${YELLOW}   (Credentials are only needed for local development)${NC}"
+echo ""
 
 # Check if gcloud is installed
 if ! command -v gcloud &> /dev/null; then

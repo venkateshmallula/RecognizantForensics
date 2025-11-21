@@ -47,9 +47,19 @@ Thumbs.db
 temp_audio.wav
 /tmp/
 
-# GCP credentials
+# GCP credentials (JSON format)
 *.json
 !requirements.txt
+
+# AWS credentials (CSV format) - Note: This project uses GCP, not AWS
+*_accessKeys.csv
+*accessKeys.csv
+*credentials.csv
+
+# Service account keys
+*service-account*.json
+*credentials*.json
+*key*.json
 
 # Test videos (may be large)
 test_videos/*.mp4

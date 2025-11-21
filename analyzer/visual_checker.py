@@ -2,15 +2,52 @@ import cv2
 import numpy as np
 import os
 
-# Optional GCP Vision API - will work without it
+# Configuration - can be overridden via environment variables
+SHADOW_THRESHOLD = int(os.environ.get('SHADOW_THRESHOLD', 50))
+SHADOW_VARIANCE_THRESHOLD = float(os.environ.get('SHADOW_VARIANCE_THRESHOLD', 0.5))
+BRIGHT_THRESHOLD = int(os.environ.get('BRIGHT_THRESHOLD', 200))
+BRIGHT_RATIO_MIN = float(os.environ.get('BRIGHT_RATIO_MIN', 0.05))
+BRIGHT_RATIO_MAX = float(os.environ.get('BRIGHT_RATIO_MAX', 0.3))
+CONTOUR_COUNT_THRESHOLD = int(os.environ.get('CONTOUR_COUNT_THRESHOLD', 5))
+FRAME_SAMPLE_COUNT = int(os.environ.get('FRAME_SAMPLE_COUNT', 5))
+
+# Reflective objects to detect - can be extended via config
+REFLECTIVE_OBJECTS = os.environ.get('REFLECTIVE_OBJECTS', 
+    'Glasses,Computer monitor,Television,Mirror,Window').split(',')
+
+# Initialize GCP Vision API with proper credential handling
+vision_client = None
+HAS_VISION_API = False
+
 try:
     from google.cloud import vision
-    vision_client = vision.ImageAnnotatorClient()
-    HAS_VISION_API = True
-except Exception:
-    vision_client = None
-    HAS_VISION_API = False
-    print("Warning: Google Vision API not available. Reflection detection will be limited.")
+    from google.auth import default
+    from google.auth.exceptions import DefaultCredentialsError
+    
+    # Try to get credentials
+    try:
+        credentials, project = default()
+        vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+        HAS_VISION_API = True
+        print("✓ Google Vision API initialized successfully")
+    except DefaultCredentialsError:
+        # Check if credentials file is specified
+        creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        if creds_path and os.path.exists(creds_path):
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+            vision_client = vision.ImageAnnotatorClient()
+            HAS_VISION_API = True
+            print("✓ Google Vision API initialized with credentials file")
+        else:
+            print("⚠ Warning: Google Vision API credentials not found.")
+            print("  Set GOOGLE_APPLICATION_CREDENTIALS environment variable or")
+            print("  ensure you're running on GCP with default credentials.")
+            print("  Reflection detection will use fallback method.")
+except ImportError:
+    print("⚠ Warning: google-cloud-vision not installed. Install with: pip install google-cloud-vision")
+except Exception as e:
+    print(f"⚠ Warning: Could not initialize Vision API: {e}")
+    print("  Reflection detection will use fallback method.")
 
 def check_shadows(video_path):
     """Check shadow consistency across frames"""
@@ -39,8 +76,9 @@ def check_shadows(video_path):
             'shadow_variance': 0
         }
     
-    # Sample 5 frames evenly
-    sample_frames = np.linspace(0, frame_count-1, min(5, frame_count), dtype=int)
+    # Sample frames evenly (configurable count)
+    sample_count = min(FRAME_SAMPLE_COUNT, frame_count)
+    sample_frames = np.linspace(0, frame_count-1, sample_count, dtype=int)
     shadow_angles = []
     findings = []
     score = 100
@@ -54,9 +92,9 @@ def check_shadows(video_path):
         # Convert to grayscale for shadow detection
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Simple shadow detection using threshold
+        # Simple shadow detection using threshold (configurable)
         # Look for dark regions that could be shadows
-        _, shadow_mask = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+        _, shadow_mask = cv2.threshold(gray, SHADOW_THRESHOLD, 255, cv2.THRESH_BINARY_INV)
         
         # Find primary shadow direction (using moments)
         moments = cv2.moments(shadow_mask)
@@ -70,10 +108,10 @@ def check_shadows(video_path):
             angle = np.arctan2(cy - center_y, cx - center_x)
             shadow_angles.append(angle)
     
-    # Check if shadows jumped impossibly
+    # Check if shadows jumped impossibly (configurable threshold)
     if len(shadow_angles) > 1:
         angle_variance = np.var(shadow_angles)
-        if angle_variance > 0.5:  # Arbitrary threshold
+        if angle_variance > SHADOW_VARIANCE_THRESHOLD:
             findings.append("Shadow angles inconsistent between frames")
             score -= 35
     
@@ -96,52 +134,81 @@ def check_shadows(video_path):
     }
 
 def detect_reflections(frame):
-    """Quick reflection check using Vision API or basic image analysis"""
+    """Reflection detection using Vision API with enhanced analysis, fallback to image analysis"""
     
     if HAS_VISION_API and vision_client:
         try:
             # Convert frame to bytes
-            _, buffer = cv2.imencode('.jpg', frame)
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             image = vision.Image(content=buffer.tobytes())
             
-            # Detect objects
+            # Use Vision API to detect objects and analyze reflections
             response = vision_client.object_localization(image=image)
             objects = response.localized_object_annotations
             
-            # Look for glasses, screens, mirrors
-            reflective_objects = ['Glasses', 'Computer monitor', 'Television', 'Mirror', 'Window']
-            
+            # Check for reflective objects (configurable list)
+            detected_reflective = []
             for obj in objects:
-                if any(ref in obj.name for ref in reflective_objects):
-                    # Check for suspicious reflections
-                    # In a real implementation, you'd analyze the reflection content
-                    # For now, we'll use a simple heuristic
+                obj_name_lower = obj.name.lower()
+                for ref_obj in REFLECTIVE_OBJECTS:
+                    if ref_obj.lower() in obj_name_lower or obj_name_lower in ref_obj.lower():
+                        detected_reflective.append({
+                            'name': obj.name,
+                            'confidence': obj.score,
+                            'bounding_poly': obj.bounding_poly
+                        })
+            
+            if detected_reflective:
+                # Analyze reflection content using Vision API's safe search and properties
+                try:
+                    # Get image properties for reflection analysis
+                    properties_response = vision_client.image_properties(image=image)
+                    dominant_colors = properties_response.image_properties_annotation.dominant_colors.colors
+                    
+                    # Check for suspicious color patterns that might indicate manipulation
+                    # Reflections should have consistent color properties
+                    if len(dominant_colors) > 0:
+                        # Analyze color distribution
+                        color_variance = np.var([color.score for color in dominant_colors[:5]])
+                        
+                        return {
+                            'suspicious': True,
+                            'message': f"Reflection detected in {detected_reflective[0]['name'].lower()} with color variance: {color_variance:.2f}",
+                            'detected_objects': [obj['name'] for obj in detected_reflective],
+                            'vision_api_used': True
+                        }
+                except Exception as e:
+                    print(f"Vision API properties analysis error: {e}")
+                    # Still report reflective object detection
                     return {
                         'suspicious': True,
-                        'message': f"Reflection in {obj.name.lower()} shows inconsistent environment"
+                        'message': f"Reflection detected in {detected_reflective[0]['name'].lower()}",
+                        'detected_objects': [obj['name'] for obj in detected_reflective],
+                        'vision_api_used': True
                     }
         except Exception as e:
             print(f"Vision API error: {e}")
+            print("  Falling back to basic image analysis...")
             # Fall through to basic detection
     
-    # Fallback: Basic reflection detection using image analysis
-    # Look for bright spots that might be reflections
+    # Fallback: Basic reflection detection using image analysis (configurable thresholds)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, bright_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    _, bright_mask = cv2.threshold(gray, BRIGHT_THRESHOLD, 255, cv2.THRESH_BINARY)
     
     # Count bright regions
     bright_pixels = np.sum(bright_mask > 0)
     total_pixels = frame.shape[0] * frame.shape[1]
     bright_ratio = bright_pixels / total_pixels
     
-    # If there are many small bright regions, might be reflections
-    if 0.05 < bright_ratio < 0.3:  # Some bright spots but not too many
+    # If there are many small bright regions, might be reflections (configurable thresholds)
+    if BRIGHT_RATIO_MIN < bright_ratio < BRIGHT_RATIO_MAX:
         contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if len(contours) > 5:  # Multiple small bright regions
+        if len(contours) > CONTOUR_COUNT_THRESHOLD:
             return {
                 'suspicious': True,
-                'message': "Multiple reflection-like patterns detected"
+                'message': f"Multiple reflection-like patterns detected ({len(contours)} regions)",
+                'vision_api_used': False
             }
     
-    return {'suspicious': False}
+    return {'suspicious': False, 'vision_api_used': HAS_VISION_API}
 

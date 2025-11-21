@@ -71,7 +71,13 @@ cd recognizant-forensics
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Set up GCP credentials (for local development)
+# See GCP_CREDENTIALS_SETUP.md for detailed instructions
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account-key.json"
 ```
+
+**Important:** This project uses **Google Cloud Platform (GCP)**, not AWS. You need GCP JSON credentials. See [GCP_CREDENTIALS_SETUP.md](GCP_CREDENTIALS_SETUP.md) for setup instructions.
 
 ## Step 4: Deploy to Cloud Run from GitHub
 
