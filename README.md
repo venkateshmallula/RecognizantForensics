@@ -254,6 +254,8 @@ RecognizantForensics/
 ├── README.md             # This file
 ├── GCP_CREDENTIALS_SETUP.md  # GCP credentials setup guide
 ├── DEPLOYMENT_GUIDE.md   # Cloud Run deployment guide
+├── deploy.sh             # Initial deployment script
+├── update_deployment.sh  # Pull & redeploy script
 ├── analyzer/
 │   ├── __init__.py
 │   ├── audio_checker.py  # Reverb analysis
